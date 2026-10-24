@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorldSync Lite - Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 60px auto;
+            padding: 20px;
+            background: #f4f7fb;
+            color: #1f2937;
+        }
+
+        .panel {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px #00000010;
+        }
+
+        .status {
+            font-weight: bold;
+            margin: 16px 0;
+        }
+
+        button {
+            padding: 10px 16px;
+            margin: 5px 5px 5px 0;
+            cursor: pointer;
+        }
+
+        #log {
+            background: #f3f4f6;
+            padding: 12px;
+            min-height: 70px;
+            overflow-wrap: anywhere;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="panel">
+        <h1>WorldSync Lite</h1>
+        <p>Socket.IO Connection Test</p>
+
+        <p id="status" class="status">Connecting...</p>
+        <p>Socket ID: <span id="socketId">Not connected</span></p>
+
+        <p>Player ID: <span id="playerId">Waiting...</span></p>
+        <p>Position: <span id="position">Waiting...</span></p>
+
+        <button id="connectBtn">Connect</button>
+        <button id="disconnectBtn">Disconnect</button>
+
+
+        <hr />
+
+        <h2>Room Management</h2>
+
+        <button id="createRoomBtn">Create Room</button>
+
+        <div>
+            <input id="roomIdInput" type="text" placeholder="Enter room ID" />
+            <button id="joinRoomBtn">Join Room</button>
+        </div>
+
+        <p>Current Room: <span id="roomIdDisplay">None</span></p>
+        <p>Players in Room: <span id="roomPlayers">0</span></p>
+
+
+        <h3>Connection Log</h3>
+        <div id="log">Waiting for connection...</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const status = document.getElementById("status");
+        const socketId = document.getElementById("socketId");
+        const log = document.getElementById("log");
+        const playerIdElement = document.getElementById("playerId");
+        const positionElement = document.getElementById("position");
+
+        const socket = io({
+            autoConnect: false
+        });
+
+
+        const createRoomBtn = document.getElementById("createRoomBtn");
+        const joinRoomBtn = document.getElementById("joinRoomBtn");
+        const roomIdInput = document.getElementById("roomIdInput");
+        const roomIdDisplay = document.getElementById("roomIdDisplay");
+        const roomPlayers = document.getElementById("roomPlayers");
+
+        createRoomBtn.addEventListener("click", () => {
+            socket.emit("room:create");
+        });
+
+        joinRoomBtn.addEventListener("click", () => {
+            const roomId = roomIdInput.value.trim();
+
+            if (!roomId) {
+                writeLog("Please enter a room ID.");
+                return;
+            }
+
+            socket.emit("room:join", { roomId });
+        });
+
+        socket.on("room:joined", (data) => {
+            roomIdDisplay.textContent = data.roomId;
+            roomPlayers.textContent = `${data.players.length}/${data.maxPlayers}`;
+
+            writeLog(`Joined room ${data.roomId}`);
+        });
+
+        socket.on("room:player-joined", (data) => {
+            writeLog(`Player joined: ${data.playerId}`);
+        });
+
+        socket.on("room:player-left", (data) => {
+            writeLog(`Player left: ${data.playerId}`);
+        });
+
+        socket.on("room:error", (data) => {
+            writeLog(`Room error: ${data.message}`);
+        });
+
+
+        function writeLog(message) {
+            log.textContent = message;
+        }
+
+        socket.on("connect", () => {
+            status.textContent = "Connected";
+            status.style.color = "green";
+            socketId.textContent = socket.id;
+
+            writeLog("Successfully connected to WorldSync backend.");
+        });
+
+        socket.on("player:welcome", (player) => {
+            playerIdElement.textContent = player.playerId;
+
+            positionElement.textContent =
+                `x: ${player.x}, y: ${player.y}`;
+
+            writeLog("Player initialized successfully.");
+        });
+
+        socket.on("disconnect", (reason) => {
+            status.textContent = "Disconnected";
+            status.style.color = "red";
+            socketId.textContent = "Not connected";
+
+            writeLog("Disconnected: " + reason);
+        });
+
+        socket.on("connect_error", (error) => {
+            status.textContent = "Connection failed";
+            status.style.color = "red";
+
+            writeLog("Error: " + error.message);
+        });
+
+        document.getElementById("connectBtn").onclick = () => {
+            if (!socket.connected) {
+                writeLog("Attempting to connect...");
+                socket.connect();
+            }
+        };
+
+        document.getElementById("disconnectBtn").onclick = () => {
+            if (socket.connected) {
+                socket.disconnect();
+            }
+        };
+
+        socket.connect();
+    </script>
+</body>
+
+</html>
