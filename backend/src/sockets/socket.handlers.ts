@@ -1,24 +1,113 @@
 import type { Server, Socket } from "socket.io";
-import {createPlayer,getPlayer,players,removePlayer,} from "../game/game.engine.js";
-import {addPlayerToRoom,createRoom,getRoom,getRoomPlayers,removePlayerFromRoom,} from "../rooms/room.manager.js";
+import { createPlayer, getPlayer, players, removePlayer, setMovementInput, getPlayerBySessionToken } from "../game/game.engine.js";
+import { addPlayerToRoom, createRoom, getRoom, getRoomPlayers, removePlayerFromRoom, } from "../rooms/room.manager.js";
+import { GAME_CONFIG } from "../config/game.config.js";
 
 interface JoinRoomPayload {
     roomId?: unknown;
 }
 
 export function registerSocketHandlers(io: Server): void {
+
     io.on("connection", (socket: Socket) => {
-        const player = createPlayer(socket.id);
+        const suppliedToken: unknown = socket.handshake.auth?.sessionToken;
+
+        let player =
+            typeof suppliedToken === "string"
+                ? getPlayerBySessionToken(suppliedToken)
+                : undefined;
+
+        const matchedPlayer =
+            typeof suppliedToken === "string"
+                ? getPlayerBySessionToken(suppliedToken)
+                : undefined;
+
+        let recovered = false;
+
+        if (player && !player.connected) {
+            const timer = pendingRemovals.get(player.id);
+
+            if (timer) {
+                clearTimeout(timer);
+                pendingRemovals.delete(player.id);
+            }
+
+            player.connected = true;
+            player.socketId = socket.id;
+            player.moveX = 0;
+            player.moveY = 0;
+            recovered = true;
+        } else {
+            player = createPlayer(socket.id);
+        }
 
         socket.data.playerId = player.id;
+
+        if (player.roomId) {
+            socket.join(player.roomId);
+        }
 
         socket.emit("player:welcome", {
             playerId: player.id,
             x: player.x,
             y: player.y,
+            roomId: player.roomId ?? null,
+            sessionToken: player.sessionToken,
+            recovered,
         });
 
-        console.log(`Player connected: ${player.id}`);
+        if (recovered && player.roomId) {
+            const room = getRoom(player.roomId);
+
+            if (room) {
+                socket.emit("room:joined", {
+                    roomId: room.id,
+                    players: getRoomPlayers(room, players),
+                    maxPlayers: room.maxPlayers,
+                });
+            }
+        }
+
+        console.log(
+            recovered
+                ? `Player session recovered: ${player.id}`
+                : `Player connected: ${player.id}`
+        );
+
+        socket.on("player:move", (payload: { dx?: unknown; dy?: unknown }) => {
+            const playerId = socket.data.playerId as string | undefined;
+            if (!playerId) {
+                return;
+            }
+            const player = getPlayer(playerId);
+            if (!player?.roomId) {
+                socket.emit("game:error", {
+                    message: "Join a room before moving.",
+                });
+                return;
+            }
+
+            const success = setMovementInput(
+                playerId,
+                payload?.dx,
+                payload?.dy
+            );
+
+            if (!success) {
+                socket.emit("game:error", {
+                    message: "Invalid movement input.",
+                });
+            }
+        }
+        );
+
+        socket.on("player:stop", () => {
+            const playerId = socket.data.playerId as string | undefined;
+            if (!playerId) {
+                return;
+            }
+            setMovementInput(playerId, 0, 0);
+        });
 
         socket.on("room:create", () => {
             const currentPlayer = getPlayer(socket.data.playerId as string);
@@ -90,37 +179,54 @@ export function registerSocketHandlers(io: Server): void {
                 maxPlayers: room.maxPlayers,
             });
 
-            socket.to(room.id).emit("room:player-joined", {
+            io.to(room.id).emit("room:player-joined", {
                 playerId: currentPlayer.id,
                 x: currentPlayer.x,
                 y: currentPlayer.y,
+                players: getRoomPlayers(room, players),
+                maxPlayers: room.maxPlayers,
             });
 
             console.log(`Player ${currentPlayer.id} joined room ${room.id}`);
         });
 
+
         socket.on("disconnect", () => {
             const playerId = socket.data.playerId as string | undefined;
-
             if (!playerId) return;
 
-            const disconnectedPlayer = getPlayer(playerId);
+            const player = getPlayer(playerId);
+            if (!player || player.socketId !== socket.id) return;
 
-            if (!disconnectedPlayer) return;
+            player.connected = false;
+            player.moveX = 0;
+            player.moveY = 0;
 
-            if (disconnectedPlayer.roomId) {
-                const roomId = disconnectedPlayer.roomId;
+            console.log(`Player disconnected temporarily: ${playerId}`);
 
-                removePlayerFromRoom(roomId, disconnectedPlayer.id);
+            const timer = setTimeout(() => {
+                const currentPlayer = getPlayer(playerId);
 
-                io.to(roomId).emit("room:player-left", {
-                    playerId: disconnectedPlayer.id,
-                });
-            }
+                if (!currentPlayer || currentPlayer.connected) return;
 
-            removePlayer(playerId);
+                if (currentPlayer.roomId) {
+                    const roomId = currentPlayer.roomId;
+                    removePlayerFromRoom(roomId, playerId);
+                    io.to(roomId).emit("room:player-left", {
+                        playerId,
+                    });
+                }
 
-            console.log(`Player disconnected: ${playerId}`);
+                removePlayer(playerId);
+                pendingRemovals.delete(playerId);
+                console.log(`Player session expired: ${playerId}`);
+            }, GAME_CONFIG.reconnectGracePeriodMs);
+            pendingRemovals.set(playerId, timer);
         });
     });
 }
+
+const pendingRemovals = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+>();

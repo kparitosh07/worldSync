@@ -62,3 +62,7 @@ export function getRoomPlayers(
             y: player.y,
         }));
 }
+
+export function getAllRooms(): GameRoom[] {
+  return Array.from(rooms.values());
+}

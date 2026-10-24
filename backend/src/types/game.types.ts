@@ -5,6 +5,10 @@ export interface Player {
   y: number;
   connectedAt: number;
   roomId?: string;
+  moveX: number;
+  moveY: number;
+  sessionToken: string;
+  connected: boolean;
 }
 
 export interface GameRoom {

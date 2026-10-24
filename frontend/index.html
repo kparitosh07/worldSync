@@ -72,6 +72,14 @@
         <p>Players in Room: <span id="roomPlayers">0</span></p>
 
 
+        <hr />
+        <h2>Game Arena</h2>
+        <p>Move with WASD or the arrow keys after joining a room.</p>
+
+        <canvas id="gameCanvas" width="800" height="600"
+            style="border: 2px solid #555; background: #f4f4f4; max-width: 100%;">
+        </canvas>
+
         <h3>Connection Log</h3>
         <div id="log">Waiting for connection...</div>
     </div>
@@ -84,10 +92,16 @@
         const playerIdElement = document.getElementById("playerId");
         const positionElement = document.getElementById("position");
 
-        const socket = io({
-            autoConnect: false
-        });
+        const savedSessionToken = sessionStorage.getItem("worldsync-session-token");
 
+
+        const socket = io({
+            auth: (callback) => {
+                callback({
+                    sessionToken: sessionStorage.getItem("worldsync-session-token"),
+                });
+            },
+        });
 
         const createRoomBtn = document.getElementById("createRoomBtn");
         const joinRoomBtn = document.getElementById("joinRoomBtn");
@@ -110,6 +124,108 @@
             socket.emit("room:join", { roomId });
         });
 
+
+        const gameCanvas = document.getElementById("gameCanvas");
+        const ctx = gameCanvas.getContext("2d");
+
+        let gamePlayers = [];
+
+
+        socket.on("game:state", (data) => {
+            if (!data || !Array.isArray(data.players)) return;
+
+            // Ignore snapshots for a different room.
+            const displayedRoom = roomIdDisplay.textContent;
+            if (displayedRoom !== "None" && data.roomId !== displayedRoom) {
+                return;
+            }
+
+            gamePlayers = data.players;
+            roomPlayers.textContent = `${data.players.length}/${data.players.length > 0 ? 3 : 3}`;
+
+            const myPlayer = data.players.find(
+                (player) => player.playerId ===
+                    document.getElementById("playerId").textContent
+            );
+
+            if (myPlayer) {
+                document.getElementById("position").textContent =
+                    `X: ${Math.round(myPlayer.x)}, Y: ${Math.round(myPlayer.y)}`;
+            }
+
+            drawArena();
+        });
+
+
+        function drawArena() {
+            // Clear the previous frame.
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+            // Draw arena border.
+            ctx.strokeStyle = "#888";
+            ctx.strokeRect(0, 0, gameCanvas.width, gameCanvas.height);
+
+            // Draw every player received from the server.
+            for (const player of gamePlayers) {
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, 15, 0, Math.PI * 2);
+                ctx.fillStyle = "#2563eb";
+                ctx.fill();
+
+                ctx.fillStyle = "#111827";
+                ctx.font = "12px Arial";
+                ctx.fillText(
+                    player.playerId.slice(0, 6),
+                    player.x - 18,
+                    player.y - 22
+                );
+            }
+        }
+
+
+        const pressedKeys = new Set();
+
+        const movementKeys = new Set([
+            "w", "a", "s", "d",
+            "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+        ]);
+
+        function sendMovement() {
+            let dx = 0;
+            let dy = 0;
+
+            if (pressedKeys.has("a") || pressedKeys.has("ArrowLeft")) dx -= 1;
+            if (pressedKeys.has("d") || pressedKeys.has("ArrowRight")) dx += 1;
+            if (pressedKeys.has("w") || pressedKeys.has("ArrowUp")) dy -= 1;
+            if (pressedKeys.has("s") || pressedKeys.has("ArrowDown")) dy += 1;
+
+            socket.emit("player:move", { dx, dy });
+        }
+
+        window.addEventListener("keydown", (event) => {
+            if (!movementKeys.has(event.key)) return;
+
+            event.preventDefault();
+
+            if (event.repeat) return;
+
+            pressedKeys.add(event.key);
+            sendMovement();
+        });
+
+        window.addEventListener("keyup", (event) => {
+            if (!movementKeys.has(event.key)) return;
+
+            pressedKeys.delete(event.key);
+            sendMovement();
+        });
+
+        window.addEventListener("blur", () => {
+            pressedKeys.clear();
+            socket.emit("player:stop");
+        });
+
+
         socket.on("room:joined", (data) => {
             roomIdDisplay.textContent = data.roomId;
             roomPlayers.textContent = `${data.players.length}/${data.maxPlayers}`;
@@ -118,6 +234,11 @@
         });
 
         socket.on("room:player-joined", (data) => {
+            if (Array.isArray(data.players)) {
+                roomPlayers.textContent =
+                    `${data.players.length}/${data.maxPlayers}`;
+            }
+
             writeLog(`Player joined: ${data.playerId}`);
         });
 
@@ -142,13 +263,22 @@
             writeLog("Successfully connected to WorldSync backend.");
         });
 
-        socket.on("player:welcome", (player) => {
-            playerIdElement.textContent = player.playerId;
+        socket.on("player:welcome", (data) => {
+            document.getElementById("playerId").textContent = data.playerId;
 
-            positionElement.textContent =
-                `x: ${player.x}, y: ${player.y}`;
+            document.getElementById("position").textContent =
+                `X: ${data.x}, Y: ${data.y}`;
 
-            writeLog("Player initialized successfully.");
+            sessionStorage.setItem(
+                "worldsync-session-token",
+                data.sessionToken
+            );
+
+            writeLog(
+                data.recovered
+                    ? `Session recovered: ${data.playerId}`
+                    : `Welcome, player ${data.playerId}`
+            );
         });
 
         socket.on("disconnect", (reason) => {
