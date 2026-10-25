@@ -66,6 +66,7 @@
         <div>
             <input id="roomIdInput" type="text" placeholder="Enter room ID" />
             <button id="joinRoomBtn">Join Room</button>
+            <button id="leaveRoomBtn" disabled>Leave Room</button>
         </div>
 
         <p>Current Room: <span id="roomIdDisplay">None</span></p>
@@ -108,6 +109,7 @@
         const roomIdInput = document.getElementById("roomIdInput");
         const roomIdDisplay = document.getElementById("roomIdDisplay");
         const roomPlayers = document.getElementById("roomPlayers");
+        const leaveRoomBtn = document.getElementById("leaveRoomBtn");
 
         createRoomBtn.addEventListener("click", () => {
             socket.emit("room:create");
@@ -124,7 +126,20 @@
             socket.emit("room:join", { roomId });
         });
 
+        leaveRoomBtn.addEventListener("click", () => {
+            socket.emit("room:leave");
+        });
 
+        socket.on("room:left", () => {
+            roomIdDisplay.textContent = "None";
+            roomPlayers.textContent = "0";
+            leaveRoomBtn.disabled = true;
+
+            gamePlayers = [];
+            drawArena();
+
+            writeLog("You left the room.");
+        });
         const gameCanvas = document.getElementById("gameCanvas");
         const ctx = gameCanvas.getContext("2d");
 
@@ -229,7 +244,7 @@
         socket.on("room:joined", (data) => {
             roomIdDisplay.textContent = data.roomId;
             roomPlayers.textContent = `${data.players.length}/${data.maxPlayers}`;
-
+            leaveRoomBtn.disabled = false;
             writeLog(`Joined room ${data.roomId}`);
         });
 
@@ -243,7 +258,16 @@
         });
 
         socket.on("room:player-left", (data) => {
+            if (Array.isArray(data.players)) {
+                roomPlayers.textContent =
+                    `${data.players.length}/${data.maxPlayers}`;
+            }
+
             writeLog(`Player left: ${data.playerId}`);
+        });
+
+        socket.on("game:error", (data) => {
+            writeLog(data?.message ?? "An unexpected game error occurred.");
         });
 
         socket.on("room:error", (data) => {
