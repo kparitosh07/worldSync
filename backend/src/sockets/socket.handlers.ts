@@ -190,6 +190,42 @@ export function registerSocketHandlers(io: Server): void {
             console.log(`Player ${currentPlayer.id} joined room ${room.id}`);
         });
 
+        socket.on("room:leave", () => {
+            const playerId = socket.data.playerId as string | undefined;
+            if (!playerId) return;
+
+            const player = getPlayer(playerId);
+
+            if (!player || !player.roomId) {
+                socket.emit("room:error", {
+                    message: "You are not in a room.",
+                });
+                return;
+            }
+
+            const roomId = player.roomId;
+            const room = getRoom(roomId);
+
+            player.moveX = 0;
+            player.moveY = 0;
+            player.roomId = undefined;
+
+            removePlayerFromRoom(roomId, playerId);
+
+            const remainingRoom = getRoom(roomId);
+
+            if (remainingRoom) {
+                io.to(roomId).emit("room:player-left", {
+                    playerId,
+                    players: getRoomPlayers(remainingRoom, players),
+                    maxPlayers: remainingRoom.maxPlayers,
+                });
+            }
+
+            socket.leave(roomId);
+            socket.emit("room:left", { roomId });
+            console.log(`Player ${playerId} left room ${roomId}`);
+        });
 
         socket.on("disconnect", () => {
             const playerId = socket.data.playerId as string | undefined;
@@ -212,9 +248,15 @@ export function registerSocketHandlers(io: Server): void {
                 if (currentPlayer.roomId) {
                     const roomId = currentPlayer.roomId;
                     removePlayerFromRoom(roomId, playerId);
-                    io.to(roomId).emit("room:player-left", {
-                        playerId,
-                    });
+                    const room = getRoom(roomId);
+
+                    if (room) {
+                        io.to(roomId).emit("room:player-left", {
+                            playerId,
+                            players: getRoomPlayers(room, players),
+                            maxPlayers: room.maxPlayers,
+                        });
+                    }
                 }
 
                 removePlayer(playerId);
