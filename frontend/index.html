@@ -1,340 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WorldSync Lite - Connection Test</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 600px;
-            margin: 60px auto;
-            padding: 20px;
-            background: #f4f7fb;
-            color: #1f2937;
-        }
-
-        .panel {
-            background: white;
-            padding: 24px;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px #00000010;
-        }
-
-        .status {
-            font-weight: bold;
-            margin: 16px 0;
-        }
-
-        button {
-            padding: 10px 16px;
-            margin: 5px 5px 5px 0;
-            cursor: pointer;
-        }
-
-        #log {
-            background: #f3f4f6;
-            padding: 12px;
-            min-height: 70px;
-            overflow-wrap: anywhere;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#090e1a" />
+  <title>WorldSync Lite — Multiplayer Arena</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
-
 <body>
-    <div class="panel">
-        <h1>WorldSync Lite</h1>
-        <p>Socket.IO Connection Test</p>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="WorldSync Lite home">
+        <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+        <span>WorldSync<span class="brand-lite"> Lite</span></span>
+      </a>
+      <div class="topbar-right">
+        <span class="eyebrow">MULTIPLAYER SANDBOX</span>
+        <div class="connection-pill">
+          <span id="connectionDot" class="status-dot"></span>
+          <span id="status">Connecting...</span>
+        </div>
+      </div>
+    </header>
 
-        <p id="status" class="status">Connecting...</p>
-        <p>Socket ID: <span id="socketId">Not connected</span></p>
-
-        <p>Player ID: <span id="playerId">Waiting...</span></p>
-        <p>Position: <span id="position">Waiting...</span></p>
-
-        <button id="connectBtn">Connect</button>
-        <button id="disconnectBtn">Disconnect</button>
-
-
-        <hr />
-
-        <h2>Room Management</h2>
-
-        <button id="createRoomBtn">Create Room</button>
-
-        <div>
-            <input id="roomIdInput" type="text" placeholder="Enter room ID" />
-            <button id="joinRoomBtn">Join Room</button>
-            <button id="leaveRoomBtn" disabled>Leave Room</button>
+    <main class="main-layout">
+      <section class="game-column">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LIVE SESSION</p>
+            <h1>Game arena<span class="heading-period">.</span></h1>
+            <p class="muted">Move around and explore your shared space.</p>
+          </div>
+          <div class="arena-badge"><span class="pulse-dot"></span> REAL-TIME</div>
         </div>
 
-        <p>Current Room: <span id="roomIdDisplay">None</span></p>
-        <p>Players in Room: <span id="roomPlayers">0</span></p>
-
-
-        <hr />
-        <h2>Game Arena</h2>
-        <p>Move with WASD or the arrow keys after joining a room.</p>
-
-        <canvas id="gameCanvas" width="800" height="600"
-            style="border: 2px solid #555; background: #f4f4f4; max-width: 100%;">
-        </canvas>
-
-        <h3>Connection Log</h3>
-        <div id="log">Waiting for connection...</div>
-    </div>
-
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const status = document.getElementById("status");
-        const socketId = document.getElementById("socketId");
-        const log = document.getElementById("log");
-        const playerIdElement = document.getElementById("playerId");
-        const positionElement = document.getElementById("position");
-
-        const savedSessionToken = sessionStorage.getItem("worldsync-session-token");
-
-
-        const socket = io({
-            auth: (callback) => {
-                callback({
-                    sessionToken: sessionStorage.getItem("worldsync-session-token"),
-                });
-            },
-        });
-
-        const createRoomBtn = document.getElementById("createRoomBtn");
-        const joinRoomBtn = document.getElementById("joinRoomBtn");
-        const roomIdInput = document.getElementById("roomIdInput");
-        const roomIdDisplay = document.getElementById("roomIdDisplay");
-        const roomPlayers = document.getElementById("roomPlayers");
-        const leaveRoomBtn = document.getElementById("leaveRoomBtn");
-
-        createRoomBtn.addEventListener("click", () => {
-            socket.emit("room:create");
-        });
-
-        joinRoomBtn.addEventListener("click", () => {
-            const roomId = roomIdInput.value.trim();
-
-            if (!roomId) {
-                writeLog("Please enter a room ID.");
-                return;
-            }
-
-            socket.emit("room:join", { roomId });
-        });
-
-        leaveRoomBtn.addEventListener("click", () => {
-            socket.emit("room:leave");
-        });
-
-        socket.on("room:left", () => {
-            roomIdDisplay.textContent = "None";
-            roomPlayers.textContent = "0";
-            leaveRoomBtn.disabled = true;
-
-            gamePlayers = [];
-            drawArena();
-
-            writeLog("You left the room.");
-        });
-        const gameCanvas = document.getElementById("gameCanvas");
-        const ctx = gameCanvas.getContext("2d");
-
-        let gamePlayers = [];
-
-
-        socket.on("game:state", (data) => {
-            if (!data || !Array.isArray(data.players)) return;
-
-            // Ignore snapshots for a different room.
-            const displayedRoom = roomIdDisplay.textContent;
-            if (displayedRoom !== "None" && data.roomId !== displayedRoom) {
-                return;
-            }
-
-            gamePlayers = data.players;
-            roomPlayers.textContent = `${data.players.length}/${data.players.length > 0 ? 3 : 3}`;
-
-            const myPlayer = data.players.find(
-                (player) => player.playerId ===
-                    document.getElementById("playerId").textContent
-            );
-
-            if (myPlayer) {
-                document.getElementById("position").textContent =
-                    `X: ${Math.round(myPlayer.x)}, Y: ${Math.round(myPlayer.y)}`;
-            }
-
-            drawArena();
-        });
-
-
-        function drawArena() {
-            // Clear the previous frame.
-            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
-
-            // Draw arena border.
-            ctx.strokeStyle = "#888";
-            ctx.strokeRect(0, 0, gameCanvas.width, gameCanvas.height);
-
-            // Draw every player received from the server.
-            for (const player of gamePlayers) {
-                ctx.beginPath();
-                ctx.arc(player.x, player.y, 15, 0, Math.PI * 2);
-                ctx.fillStyle = "#2563eb";
-                ctx.fill();
-
-                ctx.fillStyle = "#111827";
-                ctx.font = "12px Arial";
-                ctx.fillText(
-                    player.playerId.slice(0, 6),
-                    player.x - 18,
-                    player.y - 22
-                );
-            }
-        }
-
-
-        const pressedKeys = new Set();
-
-        const movementKeys = new Set([
-            "w", "a", "s", "d",
-            "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
-        ]);
-
-        function sendMovement() {
-            let dx = 0;
-            let dy = 0;
-
-            if (pressedKeys.has("a") || pressedKeys.has("ArrowLeft")) dx -= 1;
-            if (pressedKeys.has("d") || pressedKeys.has("ArrowRight")) dx += 1;
-            if (pressedKeys.has("w") || pressedKeys.has("ArrowUp")) dy -= 1;
-            if (pressedKeys.has("s") || pressedKeys.has("ArrowDown")) dy += 1;
-
-            socket.emit("player:move", { dx, dy });
-        }
-
-        window.addEventListener("keydown", (event) => {
-            if (!movementKeys.has(event.key)) return;
-
-            event.preventDefault();
-
-            if (event.repeat) return;
-
-            pressedKeys.add(event.key);
-            sendMovement();
-        });
-
-        window.addEventListener("keyup", (event) => {
-            if (!movementKeys.has(event.key)) return;
-
-            pressedKeys.delete(event.key);
-            sendMovement();
-        });
-
-        window.addEventListener("blur", () => {
-            pressedKeys.clear();
-            socket.emit("player:stop");
-        });
-
-
-        socket.on("room:joined", (data) => {
-            roomIdDisplay.textContent = data.roomId;
-            roomPlayers.textContent = `${data.players.length}/${data.maxPlayers}`;
-            leaveRoomBtn.disabled = false;
-            writeLog(`Joined room ${data.roomId}`);
-        });
-
-        socket.on("room:player-joined", (data) => {
-            if (Array.isArray(data.players)) {
-                roomPlayers.textContent =
-                    `${data.players.length}/${data.maxPlayers}`;
-            }
-
-            writeLog(`Player joined: ${data.playerId}`);
-        });
-
-        socket.on("room:player-left", (data) => {
-            if (Array.isArray(data.players)) {
-                roomPlayers.textContent =
-                    `${data.players.length}/${data.maxPlayers}`;
-            }
-
-            writeLog(`Player left: ${data.playerId}`);
-        });
-
-        socket.on("game:error", (data) => {
-            writeLog(data?.message ?? "An unexpected game error occurred.");
-        });
-
-        socket.on("room:error", (data) => {
-            writeLog(`Room error: ${data.message}`);
-        });
-
-
-        function writeLog(message) {
-            log.textContent = message;
-        }
-
-        socket.on("connect", () => {
-            status.textContent = "Connected";
-            status.style.color = "green";
-            socketId.textContent = socket.id;
-
-            writeLog("Successfully connected to WorldSync backend.");
-        });
-
-        socket.on("player:welcome", (data) => {
-            document.getElementById("playerId").textContent = data.playerId;
-
-            document.getElementById("position").textContent =
-                `X: ${data.x}, Y: ${data.y}`;
-
-            sessionStorage.setItem(
-                "worldsync-session-token",
-                data.sessionToken
-            );
-
-            writeLog(
-                data.recovered
-                    ? `Session recovered: ${data.playerId}`
-                    : `Welcome, player ${data.playerId}`
-            );
-        });
-
-        socket.on("disconnect", (reason) => {
-            status.textContent = "Disconnected";
-            status.style.color = "red";
-            socketId.textContent = "Not connected";
-
-            writeLog("Disconnected: " + reason);
-        });
-
-        socket.on("connect_error", (error) => {
-            status.textContent = "Connection failed";
-            status.style.color = "red";
-
-            writeLog("Error: " + error.message);
-        });
-
-        document.getElementById("connectBtn").onclick = () => {
-            if (!socket.connected) {
-                writeLog("Attempting to connect...");
-                socket.connect();
-            }
-        };
-
-        document.getElementById("disconnectBtn").onclick = () => {
-            if (socket.connected) {
-                socket.disconnect();
-            }
-        };
-
-        socket.connect();
-    </script>
+        <div class="arena-frame">
+          <div class="arena-toolbar">
+            <div class="arena-toolbar-title"><span class="tiny-square"></span> ARENA / <span id="arenaRoomLabel">NO ROOM</span></div>
+            <div class="arena-toolbar-right"><span class="mini-key">W</span><span class="mini-key">A</span><span class="mini-key">S</span><span class="mini-key">D</span><span class="control-label">MOVE</span></div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="gameCanvas" width="800" height="600" aria-label="Multiplayer game arena"></canvas>
+            <div id="arenaEmptyState" class="arena-empty-state">
+              <div class="empty-orbit"><div class="empty-core"></div></div>
+              <h2>Your arena awaits</h2>
+              <p>Create a room or join a friend to get moving.</p>
+            </div>
+          </div>
+          <div class="arena-footer">
+            <span><span class="legend-dot legend-you"></span> You</span>
+            <span><span class="legend-dot legend-player"></span> Other players</span>
+            <span class="arena-coordinate">POSITION <strong id="position">Waiting...</strong></span>
+          </div>
+        </div>
+
+        <div class="controls-hint">
+          <div class="keyboard-icon">⌨</div>
+          <div><strong>Ready when you are</strong><p>Use <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or the arrow keys to move.</p></div>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <section class="panel player-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">YOUR SESSION</p><h2>Player status</h2></div>
+            <span class="avatar-orb">✦</span>
+          </div>
+          <div class="identity-card">
+            <div class="identity-avatar" id="playerAvatar">?</div>
+            <div class="identity-copy"><span class="muted small">PLAYER ID</span><strong id="playerId">Waiting...</strong><span class="identity-note">Your session identity</span></div>
+          </div>
+          <div class="stat-grid">
+            <div class="stat-card"><span class="stat-label">IN ROOM</span><strong id="roomPlayers">0 / 3</strong></div>
+            <div class="stat-card"><span class="stat-label">SOCKET</span><strong id="socketId" class="socket-value">Offline</strong></div>
+          </div>
+          <div class="button-row">
+            <button id="connectBtn" class="button button-secondary" type="button"><span class="button-icon">↻</span> Connect</button>
+            <button id="disconnectBtn" class="button button-quiet" type="button">Disconnect</button>
+          </div>
+        </section>
+
+        <section class="panel room-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">PLAY TOGETHER</p><h2>Room controls</h2></div>
+            <span class="room-icon">⌘</span>
+          </div>
+          <button id="createRoomBtn" class="button button-primary button-full" type="button"><span class="button-icon">＋</span> Create a room <span class="button-arrow">↗</span></button>
+          <div class="divider-label"><span>OR JOIN AN EXISTING ROOM</span></div>
+          <label class="input-label" for="roomIdInput">ROOM ID</label>
+          <div class="join-row">
+            <input id="roomIdInput" type="text" placeholder="Enter room code" autocomplete="off" maxlength="32" />
+            <button id="joinRoomBtn" class="button button-join" type="button" aria-label="Join room">Join <span>→</span></button>
+          </div>
+          <div class="current-room">
+            <div class="room-status-icon">⌂</div>
+            <div class="current-room-copy"><span class="muted small">CURRENT ROOM</span><strong id="roomIdDisplay">None</strong></div>
+            <button id="leaveRoomBtn" class="button button-leave" type="button" disabled>Leave</button>
+          </div>
+        </section>
+
+        <section class="panel activity-panel">
+          <div class="panel-heading activity-heading">
+            <div><p class="eyebrow">SYSTEM MESSAGES</p><h2>Activity</h2></div>
+            <span class="live-label"><span class="pulse-dot"></span> LIVE</span>
+          </div>
+          <div id="log" class="activity-log" role="status" aria-live="polite"><span class="log-bullet"></span><span>Waiting for connection...</span></div>
+          <div class="activity-footer"><span class="status-dot status-dot-muted"></span> Session activity appears here</div>
+        </section>
+      </aside>
+    </main>
+    <footer class="page-footer"><span>WORLDSYNC LITE</span><span>Built for shared spaces <span class="footer-spark">✦</span></span><span id="footerConnection">INITIALIZING CONNECTION</span></footer>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="script.js"></script>
 </body>
-
 </html>
