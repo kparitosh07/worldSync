@@ -7,11 +7,12 @@ import { registerSocketHandlers } from "./sockets/socket.handlers.js";
 import { updatePlayerPositions, players, } from "./game/game.engine.js";
 import { getAllRooms, getRoomPlayers, } from "./rooms/room.manager.js";
 import { GAME_CONFIG } from "./config/game.config.js";
+import * as path from "node:path";
 
 const app = express();
 
-app.use(express.static("../frontend"));
 app.use(healthRoutes);
+app.use(express.static(path.resolve(process.cwd(), "../frontend")));
 
 const httpServer = createServer(app);
 const io = new Server(httpServer);
@@ -37,8 +38,8 @@ setInterval(() => {
   }
 }, TICK_INTERVAL);
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {
-  console.log(`WorldSync Lite running at http://localhost:${PORT}`);
+  console.log(`WorldSync Lite running on port ${PORT}`);
 });
